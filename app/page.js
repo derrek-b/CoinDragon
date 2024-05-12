@@ -1,94 +1,122 @@
-import Image from 'next/image'
-import styles from './page.module.css'
+'use client'
+
+import { useState, useEffect } from 'react'
+import { ethers } from 'ethers'
+
+// Components
+import Overview from "./components/Overview"
+import Holdings from './components/Holdings'
+import Values from './components/Values'
+import Assets from './components/Assets'
 
 export default function Home() {
+  const [account, setAccount] = useState(null)
+  const [trackedAssets, setTrackedAssets] = useState([])
+
+  const [markets, setMarkets] = useState(null)
+  const [tokens, setTokens] = useState([])
+
+  const getMarkets = async () => {
+    const ROOT_URL = 'https://api.coingecko.com/api/v3'
+    const ENDPOINT = '/coins/markets'
+    const AMOUNT = 25
+    const ARGUMENTS = `?vs_currency=usd&category=ethereum-ecosystem&order=market_cap_desc&per_page=${AMOUNT}&page=1&sparkline=false&locale=en`
+
+    const response = await fetch(ROOT_URL + ENDPOINT + ARGUMENTS)
+
+    setMarkets(await response.json())
+  }
+
+  const getToken = async () => {
+    // TODO: Fetch token info via API and sew it together
+
+    const id = trackedAssets[trackedAssets.length - 1]
+
+    // Market data
+    const market = markets.find((market) => (
+      market.id === id
+    ))
+
+    // Token details via API
+    const ROOT_URL = 'https://api.coingecko.com/api/v3'
+    const TOKEN_ENPOINT = `/coins/${id}`
+    const TOKEN_ARGUMENTS = `?tickers=false&market_data=false&community_data=false&developer_data=false&sparkline=false`
+
+    const tokenResponse = await fetch(ROOT_URL + TOKEN_ENPOINT + TOKEN_ARGUMENTS)
+    const tokenData = await tokenResponse.json()
+    const details = tokenData.detail_platforms.ethereum
+
+    // 7 day price data via API
+    const PRICES_ENDPOINT = `/coins/${id}/market_chart/`
+    const PRICES_ARGUMENTS = '?vs_currency=usd&days=7&interval=daily'
+
+    const pricesResponse = await fetch(ROOT_URL + PRICES_ENDPOINT + PRICES_ARGUMENTS)
+    const prices = (await pricesResponse.json()).prices
+
+    // Balance via blockchain call
+    const ETH_RPC_URL = 'https://eth-mainnet.g.alchemy.com/v2/E4_lJ3TqfDmKsg1q3QsZYePyu_DFhMHC'
+    const ABI = ['function balanceOf(address) view returns (uint)']
+    const PROVIDER = new ethers.JsonRpcProvider(ETH_RPC_URL)
+
+    let balance
+
+    if(details) {
+      const contract = new ethers.Contract(details.contract_address, ABI, PROVIDER)
+      balance = Number(ethers.formatUnits(await contract.balanceOf(account), details.decimal_place))
+    } else {
+      balance = Number(ethers.formatUnits(await PROVIDER.getBalance(account), 18))
+    }
+
+    const token = {
+      id: id,
+      market: market,
+      token: tokenData,
+      address: details ? details.contract_address : null,
+      prices: prices,
+      balance: balance,
+      value: balance * market.current_price
+    }
+
+    if(tokens.length === 0) {
+      setTokens([token])
+    } else {
+      setTokens([...tokens, token])
+    }
+  }
+
+  useEffect(() => {
+    if(!markets) {
+      getMarkets()
+    }
+
+    if(trackedAssets.length !== 0) {
+      getToken()
+    }
+
+  }, [trackedAssets])
+
   return (
-    <main className={styles.main}>
-      <div className={styles.description}>
-        <p>
-          Get started by editing&nbsp;
-          <code className={styles.code}>app/page.js</code>
-        </p>
-        <div>
-          <a
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{' '}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className={styles.vercelLogo}
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
-      </div>
+    <main>
+      <h2>Portfolio Overview</h2>
 
-      <div className={styles.center}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
+        <Overview
+          account={account}
+          setAccount={setAccount}
+          markets={markets}
+          trackedAssets={trackedAssets}
+          setTrackedAssets={setTrackedAssets}
+          tokens={tokens}
         />
-      </div>
 
-      <div className={styles.grid}>
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Docs <span>-&gt;</span>
-          </h2>
-          <p>Find in-depth information about Next.js features and API.</p>
-        </a>
+      <div className="details">
+        <div className="divider"></div>
 
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Learn <span>-&gt;</span>
-          </h2>
-          <p>Learn about Next.js in an interactive course with&nbsp;quizzes!</p>
-        </a>
+        <Holdings tokens={tokens} />
 
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Templates <span>-&gt;</span>
-          </h2>
-          <p>Explore starter templates for Next.js.</p>
-        </a>
+        <Values tokens={tokens} />
 
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Deploy <span>-&gt;</span>
-          </h2>
-          <p>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
+        <Assets tokens={tokens} setTokens={setTokens} trackedAssets={trackedAssets} setTrackedAssets={setTrackedAssets} />
+
       </div>
     </main>
   )
